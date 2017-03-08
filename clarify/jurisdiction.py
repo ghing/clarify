@@ -30,6 +30,10 @@ class Jurisdiction(object):
         self.name = name
         self.summary_url = self._get_summary_url()
 
+    def __repr__(self):
+        return "Jurisdiction(url='{url}', level='{level}', name='{name}')".format(
+            url=self.url, level=self.level, name=self.name)
+
     def get_subjurisdictions(self):
         """
         Returns a list of subjurisdictions depending on the level
