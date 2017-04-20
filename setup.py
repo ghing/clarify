@@ -27,6 +27,11 @@ setup(
     long_description=long_description,
     packages=find_packages(),
     include_package_data=True,
+    entry_points={
+        'console_scripts': [
+            'clarify=clarify.cli:main',
+        ],
+    },
     install_requires=[
         'requests',
         'lxml',
@@ -34,10 +39,13 @@ setup(
         'six',
         'python-dateutil',
         'requests-futures',
+        # TODO: Make this only for Python 2.7
+        'backports.csv',
     ],
     tests_require=[
         'nose',
         'responses',
+        'mock',
     ],
     test_suite='nose.collector',
     keywords=['elections', 'Clarity', 'results', 'parser', 'scraper'],
