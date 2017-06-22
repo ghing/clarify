@@ -16,8 +16,40 @@ Clarify can be installed using pip:
 pip install clarify
 ```
 
-Usage
------
+Command line interface
+----------------------
+
+Clarify provides a command line interface for downloading jurisdictions and results from a Clarity system.
+
+### Get jurisdictions
+
+Since it can take a long time to download results for all counties in a state, Clarify has a `jurisdictions` sub-command that lists all sub-jurisdictions available from a given results URL.
+
+Running the command:
+
+    clarify jurisdictions http://results.enr.clarityelections.com/AR/63912/184685/Web01/en/summary.html
+
+Produces the output:
+
+    name,level,url
+    AR,state,http://results.enr.clarityelections.com/AR/63912/184685/Web01/en/summary.html
+    Arkansas,county,http://results.enr.clarityelections.com/AR/Arkansas/63914/184003/Web01/en/summary.html
+    Ashley,county,http://results.enr.clarityelections.com/AR/Ashley/63915/183908/Web01/en/summary.html
+    Baxter,county,http://results.enr.clarityelections.com/AR/Baxter/63916/184088/Web01/en/summary.html
+    Benton,county,http://results.enr.clarityelections.com/AR/Benton/63917/183978/Web01/en/summary.html
+    Boone,county,http://results.enr.clarityelections.com/AR/Boone/63918/183495/Web01/en/summary.html
+    Bradley,county,http://results.enr.clarityelections.com/AR/Bradley/63919/183785/Web01/en/summary.html
+    Calhoun,county,http://results.enr.clarityelections.com/AR/Calhoun/63920/184123/Web01/en/summary.html
+    Carroll,county,http://results.enr.clarityelections.com/AR/Carroll/63921/184156/Web01/en/summary.html
+
+### Get results for a jurisdiction
+
+You can get results for a particular results URL as CSV by running the `results` sub-command.
+
+    clarify results http://results.enr.clarityelections.com/AR/Yell/63988/184121/Web01/en/summary.html
+
+Python API
+----------
 
 Election results sites running Clarity software offer detailed election results at the level of the political jurisdiction (for example, a state or county) and, optionally, sub-jurisdictions beneath that (counties and/or precincts). Clarify provides methods for discovering the URLs of structured data files and for parsing the XML versions of those files into Python objects.
 
