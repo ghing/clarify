@@ -11,6 +11,7 @@ import requests
 import six
 
 import clarify
+from clarify.util import jurisdiction_levels_from_url
 
 if six.PY2:
     # Use backported Python 3-style csv package so we can write unicode
@@ -102,8 +103,6 @@ def add_parser(subparsers):
         description="Fetch election results as CSV from from a Clarity system")
     parser.add_argument('results_url',
             help="URL for the main results page for the election")
-    parser.add_argument('--level', default='state',
-            help="Reporting level of initial page. Default is 'state'.")
     parser.add_argument('--cachedir', default=None,
             help="Location of directory where files will be downloaded. By default, a temporary directory is created")
     parser.set_defaults(func=main)
@@ -125,8 +124,10 @@ def main(args):
     else:
         makedirs_exist_ok(cache_path)
 
+    levels = jurisdiction_levels_from_url(args.results_url)
+    lowest_level = levels[-1]['level']
     base_jurisdiction = clarify.Jurisdiction(url=args.results_url,
-        level=args.level)
+        level=lowest_level)
     results_iter = get_results(fetch_urls(get_report_urls([base_jurisdiction]),
         cache_path))
 
@@ -139,13 +140,9 @@ def main(args):
     ]
 
     addl_cols = {}
-    if base_jurisdiction.level == 'state':
-        addl_cols['state'] = base_jurisdiction.name
-        fieldnames = ['state'] + fieldnames
-
-    elif base_jurisdiction.level == 'county':
-        addl_cols['county'] = base_jurisdiction.name
-        fieldnames = ['county'] + fieldnames
+    for level in levels:
+        addl_cols[level['level']] = level['name']
+        fieldnames = [level['level']] + fieldnames
 
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
     writer.writeheader()

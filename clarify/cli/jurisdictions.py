@@ -3,6 +3,7 @@ import sys
 import six
 
 import clarify
+from clarify.util import jurisdiction_levels_from_url
 
 if six.PY2:
     # Use backported Python 3-style csv package so we can write unicode
@@ -16,8 +17,6 @@ def add_parser(subparsers):
         description="Fetch jurisdictions with results as CSV from from a Clarity system")
     parser.add_argument('results_url',
             help="URL for the main results page for the election")
-    parser.add_argument('--level', default='state',
-            help="Reporting level of initial page. Default is 'state'.")
     parser.add_argument('--cachedir', default=None,
             help="Location of directory where files will be downloaded. By default, a temporary directory is created")
     parser.set_defaults(func=main)
@@ -44,8 +43,11 @@ def main(args):
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
     writer.writeheader()
 
+    levels = jurisdiction_levels_from_url(args.results_url)
+    lowest_level = levels[-1]['level']
+    lowest_level_name = levels[-1]['name']
     base_jurisdiction = clarify.Jurisdiction(url=args.results_url,
-        level=args.level)
+        level=lowest_level, name=lowest_level_name)
 
     for jurisdiction in get_all_jurisdictions(base_jurisdiction):
         writer.writerow({
