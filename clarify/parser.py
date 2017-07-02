@@ -1,5 +1,6 @@
 import datetime
 from collections import namedtuple
+import logging
 
 import dateutil.parser
 from lxml import etree
@@ -143,7 +144,7 @@ class Parser(object):
         result_jurisdictions = []
         precinct_els = tree.xpath('/ElectionResult/VoterTurnout/Precincts/Precinct')
         for el in precinct_els:
-            result_jurisdictions.append(ResultJurisdiction(
+            jurisdiction = ResultJurisdiction(
               name=el.attrib['name'],
               total_voters=int(el.attrib['totalVoters']),
               ballots_cast=int(el.attrib['ballotsCast']),
@@ -153,10 +154,15 @@ class Parser(object):
               precincts_reported=None,
               precincts_reporting_percent=None,
               level='precinct'
-            ))
+            )
+            logging.debug('Parsed {level} jurisdiction "{name}"'.format(
+                level=jurisdiction.level, name=jurisdiction.name))
+
+            result_jurisdictions.append(jurisdiction)
+
         county_els = tree.xpath('/ElectionResult/ElectionVoterTurnout/Counties/County')
         for el in county_els:
-            result_jurisdictions.append(ResultJurisdiction(
+            jurisdiction = ResultJurisdiction(
               name=el.attrib['name'],
               total_voters=int(el.attrib['totalVoters']),
               ballots_cast=int(el.attrib['ballotsCast']),
@@ -166,7 +172,11 @@ class Parser(object):
               precincts_reported=float(el.attrib['precinctsReported']),
               precincts_reporting_percent=float(el.attrib['precinctsReportingPercent']),
               level='county'
-            ))
+            )
+            logging.debug('Parsed {level} jurisdiction "{name}"'.format(
+                level=jurisdiction.level, name=jurisdiction.name))
+            result_jurisdictions.append(jurisdiction)
+
         return result_jurisdictions
 
     @property
@@ -279,6 +289,7 @@ class Parser(object):
            counties_reported=self._get_attrib(contest_el, 'countiesReported', int),
            counties_participating=self._get_attrib(contest_el, 'countiesParticipating', int)
         )
+        logging.debug('Parsed contest "{text}"'.format(text=contest.text))
 
         for r in self._parse_no_choice_results(contest_el, result_jurisdiction_lookup, contest):
             contest.add_result(r)
@@ -374,6 +385,11 @@ class Parser(object):
             party=party,
             total_votes=contest_el.attrib['totalVotes'],
         )
+        logging.debug('Parsed choice "{text}" ({party}) with {total_votes} votes'.format(
+            text=choice.text,
+            party=choice.party,
+            total_votes=choice.total_votes
+        ))
 
         for vt_el in contest_el.xpath('./VoteType'):
             vote_type = vt_el.attrib['name']
@@ -387,13 +403,23 @@ class Parser(object):
 
             for subjurisdiction_el in vt_el.xpath('./Precinct') + vt_el.xpath('./County'):
                 subjurisdiction = result_jurisdiction_lookup[subjurisdiction_el.attrib['name']]
-                choice.add_result(Result(
+                result = Result(
                     contest=contest,
                     vote_type=vote_type,
                     jurisdiction=subjurisdiction,
                     votes=int(subjurisdiction_el.attrib['votes']),
                     choice=choice
-                ))
+                )
+                logging.debug(
+                    'Parsed "{vote_type}" result for "{choice}" in '
+                    '"{jurisdiction}" with {votes} votes'.format(
+                        vote_type=result.vote_type,
+                        choice=choice.text,
+                        jurisdiction=subjurisdiction.name,
+                        votes=result.votes))
+
+                choice.add_result(result)
+
         return choice
 
     @classmethod

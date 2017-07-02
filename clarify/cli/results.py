@@ -1,6 +1,7 @@
 import errno
 import hashlib
 from itertools import chain
+import logging
 import os
 import shutil
 import sys
@@ -74,12 +75,15 @@ def result_as_dict(result, **addl_cols):
     #  it's in the data).
 
     if result.jurisdiction is not None:
-        result_dict['jurisdiction'] = result.jurisdiction.name
+        jurisdiction_key = result.jurisdiction.level
+        result_dict[jurisdiction_key] = result.jurisdiction.name
 
     if result.choice is not None:
         result_dict['candidate'] = result.choice.text
         result_dict['party'] = result.choice.party
-        result_dict['votes'] = result.choice.total_votes
+
+    result_dict['votes'] = result.votes
+    result_dict['vote_type'] = result.vote_type
 
     return result_dict
 
@@ -96,8 +100,6 @@ def get_results(paths):
     return chain.from_iterable(get_results_from_file(unzip(path)) for path in paths)
 
 
-
-
 def add_parser(subparsers):
     parser = subparsers.add_parser('results',
         description="Fetch election results as CSV from from a Clarity system")
@@ -105,15 +107,20 @@ def add_parser(subparsers):
             help="URL for the main results page for the election")
     parser.add_argument('--cachedir', default=None,
             help="Location of directory where files will be downloaded. By default, a temporary directory is created")
+    parser.add_argument('--log', default=None)
     parser.set_defaults(func=main)
 
     return parser
 
 
 def main(args):
-    # TODO: We need to have some kind of subjurisdiction selection because the
-    # script just takes too long to run otherwise
-    # BOOKMARK
+    if args.log is not None:
+        numeric_level = getattr(logging, args.log.upper(), None)
+        if not isinstance(numeric_level, int):
+            raise ValueError("Invalid log level: {level}".format(
+                level=args.log))
+
+        logging.basicConfig(level=numeric_level)
 
     cache_path = args.cachedir
     temporary_cache_dir = False
@@ -131,18 +138,34 @@ def main(args):
     results_iter = get_results(fetch_urls(get_report_urls([base_jurisdiction]),
         cache_path))
 
+    # We want the fields in the output CSV, and their order to match those
+    # in the data entry instructions for OpenElex
+    # (http://docs.openelections.net/data-entry/#instructions).
     fieldnames = [
-        'jurisdiction',
         'office',
         'candidate',
         'party',
-        'votes',
     ]
 
+    # Now add in the jurisdiction columns.  Unlike the  examples in the
+    # docs, we'll also add a state column, useful if you're slamming results
+    # into a single database.
     addl_cols = {}
     for level in levels:
         addl_cols[level['level']] = level['name']
-        fieldnames = [level['level']] + fieldnames
+        fieldnames.append(level['level'])
+
+    if lowest_level == 'county':
+        # URL indicates county, which means we'll have results for each
+        # precinct
+        fieldnames.append('precinct')
+
+
+    # Votes go last
+    fieldnames += [
+        'votes',
+        'vote_type',
+    ]
 
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
     writer.writeheader()
