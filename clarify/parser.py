@@ -330,14 +330,16 @@ class Parser(object):
             # The subjurisdiction elements are either ``Precinct`` for county or
             # city files or ``County`` for state files
             for subjurisdiction_el in vt_el.xpath('./Precinct') + vt_el.xpath('./County'):
-                subjurisdiction = result_jurisdiction_lookup[subjurisdiction_el.attrib['name']]
-                results.append(Result(
-                    contest=contest,
-                    vote_type=vote_type,
-                    jurisdiction=subjurisdiction,
-                    votes=int(subjurisdiction_el.attrib['votes']),
-                    choice=None
-                ))
+                if subjurisdiction_el.attrib['name'] in result_jurisdiction_lookup:
+                    subjurisdiction = result_jurisdiction_lookup[subjurisdiction_el.attrib['name']]
+
+                    results.append(Result(
+                        contest=contest,
+                        vote_type=vote_type,
+                        jurisdiction=subjurisdiction,
+                        votes=int(subjurisdiction_el.attrib['votes']),
+                        choice=None
+                    ))
 
         return results
 
@@ -383,7 +385,7 @@ class Parser(object):
             key=contest_el.attrib['key'],
             text=contest_el.attrib['text'],
             party=party,
-            total_votes=contest_el.attrib['totalVotes'],
+            total_votes=int(contest_el.attrib['totalVotes']),
         )
         logging.debug('Parsed choice "{text}" ({party}) with {total_votes} votes'.format(
             text=choice.text,
@@ -402,23 +404,15 @@ class Parser(object):
             ))
 
             for subjurisdiction_el in vt_el.xpath('./Precinct') + vt_el.xpath('./County'):
-                subjurisdiction = result_jurisdiction_lookup[subjurisdiction_el.attrib['name']]
-                result = Result(
-                    contest=contest,
-                    vote_type=vote_type,
-                    jurisdiction=subjurisdiction,
-                    votes=int(subjurisdiction_el.attrib['votes']),
-                    choice=choice
-                )
-                logging.debug(
-                    'Parsed "{vote_type}" result for "{choice}" in '
-                    '"{jurisdiction}" with {votes} votes'.format(
-                        vote_type=result.vote_type,
-                        choice=choice.text,
-                        jurisdiction=subjurisdiction.name,
-                        votes=result.votes))
-
-                choice.add_result(result)
+                if subjurisdiction_el.attrib['name'] in result_jurisdiction_lookup:
+                    subjurisdiction = result_jurisdiction_lookup[subjurisdiction_el.attrib['name']]
+                    choice.add_result(Result(
+                        contest=contest,
+                        vote_type=vote_type,
+                        jurisdiction=subjurisdiction,
+                        votes=int(subjurisdiction_el.attrib['votes']),
+                        choice=choice
+                    ))
 
         return choice
 

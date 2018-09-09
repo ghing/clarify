@@ -46,6 +46,7 @@ setup(
         'nose',
         'responses',
         'mock',
+        "unittest2; python_version < '3.4'"
     ],
     test_suite='nose.collector',
     keywords=['elections', 'Clarity', 'results', 'parser', 'scraper'],

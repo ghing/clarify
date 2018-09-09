@@ -1,7 +1,12 @@
 import os
 import os.path
 import re
+
 from unittest import TestCase
+
+# Require TestCase to have subTest().
+if not hasattr(TestCase, "subTest"):
+    from unittest2 import TestCase
 
 import responses
 
@@ -135,9 +140,9 @@ COUNTIES_AR = [
 # Seem to start at 129035 and increment by 1
 COUNTY_IDS_PAIRS = {i:c for i, c in enumerate(COUNTIES_AR, start=129035)}
 
-COUNTY_REDIRECT_URL_RE = re.compile(r'http://results.enr.clarityelections.com/(?P<state>[A-Z]{2})/(?P<county>[A-Za-z\.]+)/(?P<page_id>\d+)/')
+COUNTY_REDIRECT_URL_RE = re.compile(r'https://results.enr.clarityelections.com/(?P<state>[A-Z]{2})/(?P<county>[A-Za-z\.]+)/(?P<page_id>\d+)/')
 
-COUNTY_URL_RE = re.compile(r'http://results.enr.clarityelections.com/(?P<state>[A-Z]{2})/(?P<county>[A-Za-z\.]+)/(?P<page_id>\d+)/(?P<page_id_2>\d+)/')
+COUNTY_URL_RE = re.compile(r'https://results.enr.clarityelections.com/(?P<state>[A-Z]{2})/(?P<county>[A-Za-z\.]+)/(?P<page_id>\d+)/(?P<page_id_2>\d+)/')
 
 def mock_county_response_callback(req):
     m = COUNTY_REDIRECT_URL_RE.match(req.url)
@@ -159,7 +164,7 @@ def mock_subjurisdiction_redirect_page_meta(page_id):
 
 class TestJurisdiction(TestCase):
     def test_construct(self):
-        url = 'http://results.enr.clarityelections.com/KY/15261/30235/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/KY/15261/30235/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='state')
         self.assertEqual(jurisdiction.url, url)
 
@@ -167,9 +172,9 @@ class TestJurisdiction(TestCase):
     def test_get_subjurisdictions_state(self):
         # subjurisdiction url path is in script tag
         # Construct a Jurisdiction for Kentucky's 2014 Primary Election
-        url = 'http://results.enr.clarityelections.com/KY/50972/131636/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/KY/50972/131636/en/summary.html'
         # Mock the response for the county list
-        county_url = 'http://results.enr.clarityelections.com/KY/50972/131636/en/select-county.html'
+        county_url = 'https://results.enr.clarityelections.com/KY/50972/131636/en/select-county.html'
         response_body_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
             'data', 'select-county__KY__50972__131636.html')
         with open(response_body_path) as f:
@@ -183,6 +188,10 @@ class TestJurisdiction(TestCase):
         responses.add_callback(responses.GET, COUNTY_REDIRECT_URL_RE,
             callback=mock_county_response_callback,
             content_type='text/html')
+
+        # Initialization will fail if this connection is not allowed.
+        # XXX: This is fragile, and Jurisdiction should be refactored to prevent this from being necessary.
+        responses.add(responses.GET, "https://results.enr.clarityelections.com/KY/50972/131636/reports/summary.zip", status=200)
 
         jurisdiction = Jurisdiction(url=url, level='state')
         jurisdictions = jurisdiction.get_subjurisdictions()
@@ -210,10 +219,19 @@ class TestJurisdiction(TestCase):
         path = Jurisdiction._scrape_subjurisdiction_summary_path(html)
         self.assertEqual(path, "/27401/en/summary.html")
 
+    def test_get_subjurisdictions_invalid(self):
+        """An invalid jurisdiction should return an empty list"""
+        url = "https://results.enr.clarityelections.com/FL/54234/148685/en/summary.html"
+        jurisdiction = Jurisdiction(url=url, level="state")
+        subjurisdictions = jurisdiction.get_subjurisdictions()
+        # An invalid jurisdiction has no sub-jurisdictions with results
+        expected_subjurisdiction_count = 0
+        self.assertEqual(len(subjurisdictions), expected_subjurisdiction_count)
+
     def test_get_sub_jurisdictions_none(self):
         """A jurisdiction with no sub-jurisdictions should return an empty list"""
         # Construct a Jurisdiction for Rockford City, IL 2014 General Election
-        url = 'http://results.enr.clarityelections.com/IL/Rockford/54234/148685/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/IL/Rockford/54234/148685/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='city')
         jurisdictions = jurisdiction.get_subjurisdictions()
         # A city has no sub-jurisdictions with results
@@ -223,46 +241,129 @@ class TestJurisdiction(TestCase):
     def test_get_sub_jurisdictions_none_web01(self):
         """A jurisdiction with no sub-jurisdictions with Web01 in url should return an empty list"""
         # Construct a Jurisdiction for Middlesex County, NJ 2013 General Election
-        url = 'http://results.enr.clarityelections.com/NJ/Middlesex/46982/117336/Web01/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/NJ/Middlesex/46982/117336/Web01/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='county')
         jurisdictions = jurisdiction.get_subjurisdictions()
         # A city has no sub-jurisdictions with results
         expected_jurisdiction_count = 0
         self.assertEqual(len(jurisdictions), expected_jurisdiction_count)
 
+    @responses.activate
+    def test_get_subjurisdictions_counties_web01(self):
+        """A jurisdiction with sub-jurisdictions with Web01 in url should return a list of URLs"""
+        # Avoid hitting all the summary URLs for each subjurisdiction.
+        responses.add(
+            method=responses.GET,
+            url=re.compile(r"^https://results.enr.clarityelections.com/AR/(.+/[0-9]+/[0-9]+/Web01/en/summary.html|(.+/)?[0-9]+/[0-9]+/reports/summary.zip)$"),
+            status=200,
+        )
+
+        # Construct a Jurisdiction for Arkansas 2014 General Election
+        url = "https://results.enr.clarityelections.com/AR/53237/149294/Web01/en/summary.html"
+        responses.add_passthru(url)
+        responses.add_passthru(url.replace("summary.html", "json/electionsettings.json"))
+        jurisdiction = Jurisdiction(url=url, level="state")
+
+        subjurisdictions = jurisdiction.get_subjurisdictions()
+
+        # A state like AR has county sub-jurisdictions with results
+        expected_subjurisdiction_count = 75
+        self.assertEqual(len(subjurisdictions), expected_subjurisdiction_count)
+
+        # TODO: Actually check the values in subjurisdictions.
+
     def test_parsed_url_web01_stripped(self):
         """
         A jurisdiction with Web01 in url should have a parsed URL that
         removes "Web01" from the URL"""
         # Construct a Jurisdiction for Arkansas 2014 General Election
-        url = 'http://results.enr.clarityelections.com/AR/53237/149294/Web01/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/AR/53237/149294/Web01/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='state')
         self.assertNotIn('Web01', jurisdiction.parsed_url.path)
 
     def test_report_url_xml(self):
         # Construct a Jurisdiction for Appling County, GA 2014 Primary Election
-        url = 'http://results.enr.clarityelections.com/GA/Appling/52178/139522/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/GA/Appling/52178/139522/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='county')
-        expected_url = 'http://results.enr.clarityelections.com/GA/Appling/52178/139522/reports/detailxml.zip'
+        expected_url = 'https://results.enr.clarityelections.com/GA/Appling/52178/139522/reports/detailxml.zip'
         self.assertEqual(jurisdiction.report_url('xml'), expected_url)
 
     def test_report_url_txt(self):
         # Construct a Jurisdiction for Kentucky 2010 Primary Election
-        url = 'http://results.enr.clarityelections.com/KY/15261/30235/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/KY/15261/30235/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='county')
-        expected_url = 'http://results.enr.clarityelections.com/KY/15261/30235/reports/detailtxt.zip'
+        expected_url = 'https://results.enr.clarityelections.com/KY/15261/30235/reports/detailtxt.zip'
         self.assertEqual(jurisdiction.report_url('txt'), expected_url)
 
     def test_report_url_xls(self):
         # Construct a Jurisdiction for Colorado 2014 General Election
-        url = 'http://results.enr.clarityelections.com/CO/53335/149144/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/CO/53335/149144/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='county')
-        expected_url = 'http://results.enr.clarityelections.com/CO/53335/149144/reports/detailxls.zip'
+        expected_url = 'https://results.enr.clarityelections.com/CO/53335/149144/reports/detailxls.zip'
         self.assertEqual(jurisdiction.report_url('xls'), expected_url)
+
+    def test_report_url_fake(self):
+        # Construct a Jurisdiction for Colorado 2014 General Election
+        url = "https://results.enr.clarityelections.com/CO/53335/149144/en/summary.html"
+        jurisdiction = Jurisdiction(url=url, level="county")
+        self.assertIsNone(jurisdiction.report_url("fake"))
 
     def test_summary_url(self):
         # Construct a Jurisdiction for Colorado 2014 General Election
-        url = 'http://results.enr.clarityelections.com/CO/53335/149144/en/summary.html'
+        url = 'https://results.enr.clarityelections.com/CO/53335/149144/en/summary.html'
         jurisdiction = Jurisdiction(url=url, level='state')
-        expected_url = 'http://results.enr.clarityelections.com/CO/53335/149144/reports/summary.zip'
+        expected_url = 'https://results.enr.clarityelections.com/CO/53335/149144/reports/summary.zip'
         self.assertEqual(jurisdiction.summary_url, expected_url)
+
+    def test__url_ensure_trailing_slash(self):
+        url_with = "https://results.enr.clarityelections.com/CO/63746/"
+        url_without = "https://results.enr.clarityelections.com/CO/63746"
+
+        self.assertEqual(Jurisdiction._url_ensure_trailing_slash(url_with), url_with)
+        self.assertEqual(Jurisdiction._url_ensure_trailing_slash(url_without), url_with)
+
+    def test_get_current_ver(self):
+        election_urls = [
+            "https://results.enr.clarityelections.com/CO/63746/",
+            "https://results.enr.clarityelections.com/CO/Boulder/43040/",
+            "https://results.enr.clarityelections.com/CO/Bogus/43040/",
+            "https://results.enr.clarityelections.com/AR/75879/",
+        ]
+        expected_current_vers = [
+            "184388",
+            "114182",
+            None,
+            "208723",
+        ]
+
+        for (election_url, expected_current_ver) in dict(zip(election_urls, expected_current_vers)).items():
+            with self.subTest(election_url=election_url, expected_current_ver=expected_current_ver):
+                current_ver = Jurisdiction.get_current_ver(election_url)
+
+                if expected_current_ver is None:
+                    self.assertIsNone(current_ver)
+                else:
+                    self.assertEqual(current_ver, expected_current_ver)
+
+    def test_get_latest_summary_url(self):
+        election_urls = [
+            "https://results.enr.clarityelections.com/CO/63746/",
+            "https://results.enr.clarityelections.com/CO/Boulder/43040/",
+            "https://results.enr.clarityelections.com/CO/Bogus/43040/",
+            "http://results.enr.clarityelections.com/AR/75879/",
+        ]
+        expected_urls = [
+            "https://results.enr.clarityelections.com/CO/63746/184388/Web01/en/summary.html",
+            "https://results.enr.clarityelections.com/CO/Boulder/43040/114182/en/summary.html",
+            None,
+            None,  # TODO: This uses new-style summary pages.
+        ]
+
+        for (election_url, expected_url) in dict(zip(election_urls, expected_urls)).items():
+            with self.subTest(election_url=election_url, expected_url=expected_url):
+                latest_summary_url = Jurisdiction.get_latest_summary_url(election_url)
+
+                if expected_url is None:
+                    self.assertIsNone(latest_summary_url)
+                else:
+                    self.assertEqual(latest_summary_url, expected_url)
